@@ -1,35 +1,39 @@
 import numpy as np
 
-n = 10
-m = 3
-adj = np.zeros((n,n))
-count = np.zeros((n)) 
+def networkgen(n,m,w):
+    # n = 10
+    # m = 3
+    # w = [1,0.3,0.2,0.3,1,0.6,0.2,0.4,0.3,1]
 
+    adj = np.zeros((n,n))
+    count = np.zeros((n)) 
 
-for i in range(m):
-    adj[0][i+1] = 1
-    adj[i+1][0] = 1
-    count[0] = count[0]+1
-    count[i+1] = count[i+1]+1
+    for i in range(m):
+        adj[0][i+1] = 1
+        adj[i+1][0] = 1
+        count[0] = count[0]+1
+        count[i+1] = count[i+1]+1
 
-w = [1,0.4,0.9,0.7,0.5,0.6,0.2,0.4,0.3,0.1]
+    for i in range(1,n):
+        s = np.sum(w*count)
+        t = [val/s for ind, val in enumerate(w*count)]
 
-for i in range(1,n):
-    s = np.sum(w*count)
-    t = [[val/s,ind] for ind, val in enumerate(w*count)]
-    t.sort(reverse = True)
-    c =0
-    for j in t:
-        if i!= j[1] and adj[i][j[1]]==0:
-            adj[i][j[1]] = 1
-            adj[j[1]][i] = 1
-            count[i] = count[i]+1
-            count[j[1]] = count[j[1]]+1
-            
-        c = c +1
-        if c>=m:
-            break
+        for j in range(1,n):
+            t[j] = t[j] + t[j-1]
+        
+        t = [0]+ t
 
+        for k in range(m):
+            p = np.random.uniform(0,1);
 
-print(adj)
-print(count) 
+            for j in range(1,n+1):
+                if j-1<i and adj[i][j-1]==0 and t[j-1]<=p and p < t[j]:
+                    adj[i][j-1] = 1
+                    adj[j-1][i] = 1
+                    count[i] = count[i]+1
+                    count[j-1] = count[j-1]+1
+                    break
+
+    print(adj)
+    print(count)
+    return adj
