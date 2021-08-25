@@ -34,6 +34,6 @@ def networkgen(n,m,w):
                     count[j-1] = count[j-1]+1
                     break
 
-    print(adj)
+    # print(adj)
     print(count)
     return adj

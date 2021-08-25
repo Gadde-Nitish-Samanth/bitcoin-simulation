@@ -4,16 +4,14 @@ import random
 # node_list=[]
 
 class Node:
-	def __init__(self,id,speed,ttx,bal,peers,n,env):
+	def __init__(self,id,speed,ttx,bal,peers,env):
 		self.id = id
 		self.speed= speed
 		self.ttx = ttx
 		self.bal = bal
 		self.peers = peers
-		self.n=n
 		self.env = env
 		self.trxn_cnt = 0
-		self.invalid_percent = 0.1 # fraction of invalid trxns generated
 		self.trxn_pool=[]
 		# self.action = env.process(self.create_trxn())
 
@@ -53,15 +51,15 @@ class Node:
 
 
 	# 	
-class trxn:
-	def __init__(self,txnID,F,to,coins):
+class Trxn:
+	def __init__(self,txnID,F,to,coins): #payer and payee are id's
 		self.id = txnID
 		self.payer = F
 		self.payee = to
 		self.coins = coins
 
 class link:
-	def __init__(self,j,r_ij,c_ij):
+	def __init__(self,j,r_ij,c_ij): #j is id
 		self.j = j
 		self.r_ij = r_ij
 		self.c_ij = c_ij 
