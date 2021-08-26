@@ -4,13 +4,11 @@ import random
 # node_list=[]
 
 class Node:
-	def __init__(self,id,speed,ttx,bal,peers,env):
+	def __init__(self,id,speed,bal,peers):
 		self.id = id
 		self.speed= speed
-		self.ttx = ttx
 		self.bal = bal
 		self.peers = peers
-		self.env = env
 		self.trxn_cnt = 0
 		self.trxn_pool=[]
 		# self.action = env.process(self.create_trxn())
