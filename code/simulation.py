@@ -28,7 +28,7 @@ for i in range(n):
 		speed = 0
 	else:
 		speed=1
-	node = Node(i,speed,all_balance,[],genesis_block,genesis_block)
+	node = Node(i,speed,[],genesis_block,genesis_block)
 	node_list.append(node)
 	weights.append(0.1+0.9*speed)
 
@@ -112,7 +112,7 @@ def get_balance(itr_node): # checked
 		itr_node = itr_node.parent_ptr
 	return calc_bal
 
-def get_parent(blk,check_blk): #checked
+def get_parent(blk,check_blk): # returns parent blk
 	if(check_blk.blk_id == blk.parent_id):
 		return check_blk
 	elif (len(check_blk.child_ptr_list)==0):
@@ -124,7 +124,7 @@ def get_parent(blk,check_blk): #checked
 				return temp
 		return 0 
 
-def is_valid(node_id,blk): #checked
+def is_valid(node_id,blk): # returns parent_blk if valid or returns 0
 	parent = get_parent(blk,node_list[node_id].genesis_blk)
 	if parent!=0:
 		for child in parent.child_ptr_list:
@@ -169,6 +169,7 @@ def route_blk(node_id,blk,lat,f_id): #checked
 def broadcast_blk(node_id,blk): #checked
 	yield env.timeout(np.random.exponential(B_tx))
 	if node_list[node_id].mining_blk.blk_id == blk.parent_id:
+		node_list[node_id].mining_blk = blk
 		print("broadcasting block %s at %f" %(blk.blk_id,env.now))
 		for l in node_list[node_id].peers:
 			d_ij = np.random.exponential(96/l.c_ij)
@@ -222,7 +223,7 @@ def create_blk(node_id): # checked
 
 for i in node_list:
 	env.process(create_trxn(i.id))
-	# create_blk(i.id)
+	create_blk(i.id)
 
 env.run(until=stop_time)
 

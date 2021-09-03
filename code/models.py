@@ -4,10 +4,9 @@ import random
 # node_list=[]
 
 class Node:
-	def __init__(self,id,speed,bal,peers,gen_blk,mining_block):
+	def __init__(self,id,speed,peers,gen_blk,mining_block):
 		self.id = id
 		self.speed= speed
-		self.bal = bal
 		self.peers = peers
 		self.genesis_blk = gen_blk
 		self.mining_blk = mining_block # Block object
