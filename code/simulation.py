@@ -15,7 +15,6 @@ env = simpy.Environment()
 stop_time = 5
 all_balance=20 # initial balance of all users
 invalid_trxn_ratio = 0.1
-genesis_block = Block('gen','none',[],0,'none')
 B_tx = 7 # average time of block creation (change this value) 
 
 node_list=[]
@@ -28,6 +27,7 @@ for i in range(n):
 		speed = 0
 	else:
 		speed=1
+	genesis_block = Block('gen','none',[],0,'none')
 	node = Node(i,speed,[],genesis_block,genesis_block)
 	node_list.append(node)
 	weights.append(0.1+0.9*speed)
@@ -112,20 +112,20 @@ def get_balance(itr_node): # checked
 		itr_node = itr_node.parent_ptr
 	return calc_bal
 
-def get_parent(blk,check_blk): # returns parent blk
-	if(check_blk.blk_id == blk.parent_id):
+def get_parent(parent_id,check_blk): # returns parent blk
+	if(check_blk.blk_id == parent_id):
 		return check_blk
 	elif (len(check_blk.child_ptr_list)==0):
 		return 0
 	else:
 		for child in check_blk.child_ptr_list:
-			temp = get_parent(blk,child)
+			temp = get_parent(parent_id,child)
 			if temp!=0:
 				return temp
 		return 0 
 
 def is_valid(node_id,blk): # returns parent_blk if valid or returns 0
-	parent = get_parent(blk,node_list[node_id].genesis_blk)
+	parent = get_parent(blk.parent_id,node_list[node_id].genesis_blk)
 	if parent!=0:
 		for child in parent.child_ptr_list:
 			if blk.blk_id == child.blk_id:
@@ -145,15 +145,19 @@ def is_valid(node_id,blk): # returns parent_blk if valid or returns 0
 			return 0
 	return 0
 
+def child_num(node_id,parent_id):
+	parent = get_parent(parent_id,node_list[node_id].genesis_blk)
+	return len(parent.child_ptr_list)
+
 def route_blk(node_id,blk,lat,f_id): #checked
 	yield env.timeout(lat)
 	print('Node %d : got blk %s from %d at %f' % (node_id,blk.blk_id,f_id,env.now))
 	parent = is_valid(node_id,blk)
 
-	if(parent!=0): 
-		blk.parent_ptr = parent 
-		blk.level = parent.level+1
+	if(parent!=0):
+		blk = Block(blk.blk_id,parent.blk_id,blk.trxn_list,parent.level+1,parent)
 		parent.child_ptr_list.append(blk)
+		print('childs of parent = %d' %child_num(node_id,blk.parent_id))
 		for l in node_list[node_id].peers:
 			if(l.j!=f_id):
 				d_ij = np.random.exponential(96/l.c_ij)
@@ -163,13 +167,19 @@ def route_blk(node_id,blk,lat,f_id): #checked
 				env.process(route_blk(l.j,blk,lat,node_id))
 		if blk.level > node_list[node_id].mining_blk.level:
 			node_list[node_id].mining_blk = blk
+			print('longest chain changed for node %d' % node_id)
 			create_blk(node_id)
+	else:
+		print("parent not found or invalid")
 
 
 def broadcast_blk(node_id,blk): #checked
 	yield env.timeout(np.random.exponential(B_tx))
 	if node_list[node_id].mining_blk.blk_id == blk.parent_id:
+		node_list[node_id].mining_blk.child_ptr_list.append(blk)
 		node_list[node_id].mining_blk = blk
+		print('longest chain changed for node %d' % node_id)
+		print('childs of parent = %d' %child_num(node_id,blk.parent_id))
 		print("broadcasting block %s at %f" %(blk.blk_id,env.now))
 		for l in node_list[node_id].peers:
 			d_ij = np.random.exponential(96/l.c_ij)
@@ -213,8 +223,11 @@ def create_blk(node_id): # checked
 		new_blk = Block(blk_id,parent_id,trxn_list,level,parent_ptr)
 
 		print('Block %s is created at t = %f with num_trxns = %d' % (blk_id,env.now,len(trxn_list)))
+		print('parent_blk_id = %s' %parent_id)
+		print('trxn list:')
 		for i in trxn_list:
 			print(i.id)
+		print('level:%d' %level)
 		
 		env.process(broadcast_blk(node_id,new_blk))
 
@@ -229,6 +242,5 @@ env.run(until=stop_time)
 
 # to do--------------------------------------------------------------------------------------------------------
 
-# updating bal in every node
 # changing B_Tx for every node
 # trxn:class or string
