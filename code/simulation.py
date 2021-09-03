@@ -16,7 +16,7 @@ stop_time = 5
 all_balance=20 # initial balance of all users
 invalid_trxn_ratio = 0.1
 genesis_block = Block('gen','none',[],0,'none')
-B_tx = 5 # average time of block creation (change this value) 
+B_tx = 7 # average time of block creation (change this value) 
 
 node_list=[]
 weights = []
@@ -37,7 +37,7 @@ adj = networkgen(n,2,weights)
 for i in range(n):
 	for j in range(i+1):
 		if(adj[i][j]==1):
-			r_ij = np.random.uniform(10,500);
+			r_ij = np.random.uniform(10,500)
 			if(node_list[i].speed==1 and node_list[j].speed==1):
 				c_ij=100
 			else:
@@ -51,24 +51,23 @@ for i in range(n):
 # 	for l in i.peers:
 # 		print('Node %d: linked to %d with r_ij=%d,c_ij=%d' % (i.id,l.j,l.r_ij,l.c_ij))
 
-# helper functions
+# helper functions-----------------------------------------------------------------------------------------------------
 
 def route_trxn(node_id,trxn,lat,f_id):
 	yield env.timeout(lat)
-	print('Node %d : got packet %s at %f' % (node_id,trxn.id,env.now))
-	if(trxn.coins<=node_list[trxn.payer].bal):
-		present = False
-		for i in node_list[node_id].trxn_pool:
-			if(i.id == trxn.id):
-				present=True
-		if(not present):
-			node_list[node_id].trxn_pool.append(trxn)
-			for l in node_list[node_id].peers:
-				if(l.j!=f_id):
-					d_ij = np.random.exponential(96/l.c_ij)
-					lat = (l.r_ij+d_ij+8/l.c_ij)*(0.001)
-					print('routing trxn %s to %d with delay = %f' % (trxn.id,l.j,lat))
-					env.process(route_trxn(l.j,trxn,lat,node_id))
+	print('Node %d : got packet %s from %d at %f' % (node_id,trxn.id,f_id,env.now))
+	present = False
+	for i in node_list[node_id].trxn_pool:
+		if(i.id == trxn.id):
+			present=True
+	if(not present):
+		node_list[node_id].trxn_pool.append(trxn)
+		for l in node_list[node_id].peers:
+			if(l.j!=f_id):
+				d_ij = np.random.exponential(96/l.c_ij)
+				lat = (l.r_ij+d_ij+8/l.c_ij)*(0.001)
+				print('routing trxn %s to %d with delay = %f' % (trxn.id,l.j,lat))
+				env.process(route_trxn(l.j,trxn,lat,node_id))
 
 def broadcast_trxn(node_id,trxn):
 	for l in node_list[node_id].peers:
@@ -85,10 +84,12 @@ def create_trxn(node_id):
 			vendor=vendor+1
 		valid = np.random.uniform()
 		pay=0
+		temp = get_balance(node_list[node_id].mining_blk)
+		bal = temp[node_id]
 		if valid<invalid_trxn_ratio:
-			pay = node_list[node_id].bal+10
+			pay = bal+100
 		else:
-			pay = random.randint(1,node_list[node_id].bal)
+			pay = random.randint(1,bal)
 
 		node_list[node_id].trxn_cnt = node_list[node_id].trxn_cnt+1
 		trxn_id = str(node_id)+"_"+str(node_list[node_id].trxn_cnt)
@@ -146,7 +147,7 @@ def is_valid(node_id,blk): #checked
 
 def route_blk(node_id,blk,lat,f_id): #checked
 	yield env.timeout(lat)
-	print('Node %d : got blk %s at %f' % (node_id,blk.blk_id,env.now))
+	print('Node %d : got blk %s from %d at %f' % (node_id,blk.blk_id,f_id,env.now))
 	parent = is_valid(node_id,blk)
 
 	if(parent!=0): 
@@ -168,11 +169,12 @@ def route_blk(node_id,blk,lat,f_id): #checked
 def broadcast_blk(node_id,blk): #checked
 	yield env.timeout(np.random.exponential(B_tx))
 	if node_list[node_id].mining_blk.blk_id == blk.parent_id:
+		print("broadcasting block %s at %f" %(blk.blk_id,env.now))
 		for l in node_list[node_id].peers:
 			d_ij = np.random.exponential(96/l.c_ij)
 			blk_size= len(blk.trxn_list)
 			lat = (l.r_ij+ d_ij+ 8*blk_size/l.c_ij)*(0.001)
-			print('broadcasting block %s to %d with delay = %f' % (blk.blk_id,l.j,lat))
+			print('to %d with delay = %f' % (l.j,lat))
 			env.process(route_blk(l.j,blk,lat,node_id))
 		create_blk(node_id)
 
@@ -220,6 +222,12 @@ def create_blk(node_id): # checked
 
 for i in node_list:
 	env.process(create_trxn(i.id))
-	create_blk(i.id)
+	# create_blk(i.id)
 
 env.run(until=stop_time)
+
+# to do--------------------------------------------------------------------------------------------------------
+
+# updating bal in every node
+# changing B_Tx for every node
+# trxn:class or string
