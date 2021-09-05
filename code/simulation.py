@@ -2,11 +2,16 @@ import numpy as np
 import simpy
 from networkgen import *
 from models import *
+from datetime import datetime
+
+# used the libraries simpy(for simulation) and numpy
 
 #input---------------------------------------------------------------------------------------------------------
 n = int(input("Enter the number of nodes(n): "))
 z = int(input("Enter the percent of slow nodes(z): "))
 T_tx = int(input("Enter the mean interarrival time of transactions(T_tx): "))
+high_cpu = int(input("Enter the percent of High CPU nodes: "))
+B_Tx = int(input("Enter block interarrival time(in sec): "))
 
 # Setup--------------------------------------------------------------------------------------------------------
 
@@ -14,8 +19,8 @@ T_tx = int(input("Enter the mean interarrival time of transactions(T_tx): "))
 env = simpy.Environment()
 stop_time = 5
 all_balance=20 # initial balance of all users
-invalid_trxn_ratio = 0.1
-B_tx = 7 # average time of block creation (change this value) 
+invalid_ratio = 0.1
+total_hash_power = 0 
 
 node_list=[]
 weights = []
@@ -23,14 +28,21 @@ weights = []
 # nodes creation
 for i in range(n):
 	speed = np.random.uniform()
+	cpu = np.random.uniform()
 	if speed<(z/100):
 		speed = 0
 	else:
 		speed=1
+	if cpu<(high_cpu/100):
+		hash_power = 2
+	else:
+		hash_power = 1
+	total_hash_power = total_hash_power+hash_power
+
 	genesis_block = Block('gen','none',[],0,'none')
-	node = Node(i,speed,[],genesis_block,genesis_block)
+	node = Node(i,speed,genesis_block,genesis_block,hash_power)
 	node_list.append(node)
-	weights.append(0.1+0.9*speed)
+	weights.append(1+9*speed)
 
 #network generation
 adj = networkgen(n,2,weights)
@@ -47,12 +59,83 @@ for i in range(n):
 			node_list[i].peers.append(connect_j)
 			node_list[j].peers.append(connect_i)
 
-# for i in node_list:
-# 	for l in i.peers:
-# 		print('Node %d: linked to %d with r_ij=%d,c_ij=%d' % (i.id,l.j,l.r_ij,l.c_ij))
-
 # helper functions-----------------------------------------------------------------------------------------------------
 
+def get_balance(itr_blk): # returns list of balance of nodes from using gen to itr_node blockchain 
+	calc_bal = []
+	for i in range(n):
+		calc_bal.append(all_balance)
+	while itr_blk!='none':
+		trxns = itr_blk.trxn_list
+		for t in trxns:
+			if t.payer!=-1:
+				calc_bal[t.payer] = calc_bal[t.payer]-t.coins
+			calc_bal[t.payee] = calc_bal[t.payee]+t.coins
+		itr_blk = itr_blk.parent_ptr
+	return calc_bal
+
+def get_trxns(itr_blk): # returns all trxns in blocks from genesis block to itr_node
+	all_trxns = []
+	while itr_blk!='none':
+		all_trxns.extend(itr_blk.trxn_list)
+		itr_blk = itr_blk.parent_ptr
+	return all_trxns
+
+def get_parent(parent_id,check_blk): # returns parent blk if present in the tree from check_blk or returns 0
+	if(check_blk.blk_id == parent_id):
+		return check_blk
+	elif (len(check_blk.child_ptr_list)==0):
+		return 0
+	else:
+		for child in check_blk.child_ptr_list:
+			temp = get_parent(parent_id,child)
+			if temp!=0:
+				return temp
+		return 0 
+
+def is_valid(node_id,blk): # returns parent_blk if valid or returns 0
+	parent = get_parent(blk.parent_id,node_list[node_id].genesis_blk)
+	if parent!=0: # has parent
+		done_trxns = get_trxns(parent)
+		repeated = [x for x in blk.trxn_list if x in done_trxns]
+		if len(repeated)>0:
+			return 0 # has a trxn from blockchain
+		for child in parent.child_ptr_list:
+			if blk.blk_id == child.blk_id:
+				return 0 # already in blockchain
+		calc_bal = get_balance(parent)
+		for t in blk.trxn_list:
+			if t.payer!=-1:
+				calc_bal[t.payer] = calc_bal[t.payer]-t.coins
+			calc_bal[t.payee] = calc_bal[t.payee]+t.coins
+		valid = True
+		for i in calc_bal:
+			if i<0:
+				valid = False
+		if valid: # valid
+			return parent
+		else:
+			return 0 # balance goes negative
+	return 0 # no parent
+
+def child_num(node_id,parent_id): # returns the number of childs of parent
+	parent = get_parent(parent_id,node_list[node_id].genesis_blk)
+	return len(parent.child_ptr_list)
+
+def add_orphans(node_id,blk): # adds the orphan blocks to blockchain
+	for child_blk in node_list[node_id].orphan_blocks:
+		if(child_blk.parent_id==blk.blk_id):
+			child_blk.level = blk.level+1
+			child_blk.parent_ptr = blk
+			blk.child_ptr_list.append(child)
+			if(child.level>node_list[node_id].mining_blk.level):
+				node_list[node_id].mining_blk = blk
+				print('longest chain changed for node %d' % node_id)
+				create_blk(node_id)
+			add_orphans(node_id,child_blk)
+
+
+# trxn generation,broadcasting and routing----------------------------------------------
 def route_trxn(node_id,trxn,lat,f_id):
 	yield env.timeout(lat)
 	print('Node %d : got packet %s from %d at %f' % (node_id,trxn.id,f_id,env.now))
@@ -86,8 +169,8 @@ def create_trxn(node_id):
 		pay=0
 		temp = get_balance(node_list[node_id].mining_blk)
 		bal = temp[node_id]
-		if valid<invalid_trxn_ratio:
-			pay = bal+100
+		if valid<invalid_ratio:
+			pay = bal+10000
 		else:
 			pay = random.randint(1,bal)
 
@@ -99,55 +182,7 @@ def create_trxn(node_id):
 		broadcast_trxn(node_id,real_trxn)
 		node_list[node_id].trxn_pool.append(real_trxn)
 
-def get_balance(itr_node): # checked 
-	calc_bal = []
-	for i in range(n):
-		calc_bal.append(all_balance)
-	while itr_node!='none':
-		trxns = itr_node.trxn_list
-		for t in trxns:
-			if t.payer!=-1:
-				calc_bal[t.payer] = calc_bal[t.payer]-t.coins
-			calc_bal[t.payee] = calc_bal[t.payee]+t.coins
-		itr_node = itr_node.parent_ptr
-	return calc_bal
-
-def get_parent(parent_id,check_blk): # returns parent blk
-	if(check_blk.blk_id == parent_id):
-		return check_blk
-	elif (len(check_blk.child_ptr_list)==0):
-		return 0
-	else:
-		for child in check_blk.child_ptr_list:
-			temp = get_parent(parent_id,child)
-			if temp!=0:
-				return temp
-		return 0 
-
-def is_valid(node_id,blk): # returns parent_blk if valid or returns 0
-	parent = get_parent(blk.parent_id,node_list[node_id].genesis_blk)
-	if parent!=0:
-		for child in parent.child_ptr_list:
-			if blk.blk_id == child.blk_id:
-				return 0
-		calc_bal = get_balance(parent)
-		for t in blk.trxn_list:
-			if t.payer!=-1:
-				calc_bal[t.payer] = calc_bal[t.payer]-t.coins
-			calc_bal[t.payee] = calc_bal[t.payee]+t.coins
-		valid = True
-		for i in calc_bal:
-			if i<0:
-				valid = False
-		if valid:
-			return parent
-		else:
-			return 0
-	return 0
-
-def child_num(node_id,parent_id):
-	parent = get_parent(parent_id,node_list[node_id].genesis_blk)
-	return len(parent.child_ptr_list)
+# block generation,broadcasting and routing------------------------------------------------------
 
 def route_blk(node_id,blk,lat,f_id): #checked
 	yield env.timeout(lat)
@@ -157,6 +192,7 @@ def route_blk(node_id,blk,lat,f_id): #checked
 	if(parent!=0):
 		blk = Block(blk.blk_id,parent.blk_id,blk.trxn_list,parent.level+1,parent)
 		parent.child_ptr_list.append(blk)
+		node_list[node_id].timestamp_list.append([blk.blk_id,blk.level,env.now,blk.parent_id])
 		print('childs of parent = %d' %child_num(node_id,blk.parent_id))
 		for l in node_list[node_id].peers:
 			if(l.j!=f_id):
@@ -169,15 +205,21 @@ def route_blk(node_id,blk,lat,f_id): #checked
 			node_list[node_id].mining_blk = blk
 			print('longest chain changed for node %d' % node_id)
 			create_blk(node_id)
+		add_orphans(node_id,blk)
 	else:
-		print("parent not found or invalid")
+		temp = get_parent(blk.parent_id,node_list[node_id].genesis_blk)
+		if(temp==0):
+			blk = Block(blk.blk_id,blk.parent_id,blk.trxn_list,0,'none')
+			node_list[node_id].orphan_blocks.append(blk)
+			node_list[node_id].timestamp_list.append([blk.blk_id,blk.level,env.now,blk.parent_id])
 
 
 def broadcast_blk(node_id,blk): #checked
-	yield env.timeout(np.random.exponential(B_tx))
+	yield env.timeout(np.random.exponential()*(B_Tx*total_hash_power/node_list[node_id].hash_power))
 	if node_list[node_id].mining_blk.blk_id == blk.parent_id:
 		node_list[node_id].mining_blk.child_ptr_list.append(blk)
 		node_list[node_id].mining_blk = blk
+		node_list[node_id].timestamp_list.append([blk.blk_id,blk.level,env.now,blk.parent_id])
 		print('longest chain changed for node %d' % node_id)
 		print('childs of parent = %d' %child_num(node_id,blk.parent_id))
 		print("broadcasting block %s at %f" %(blk.blk_id,env.now))
@@ -188,13 +230,6 @@ def broadcast_blk(node_id,blk): #checked
 			print('to %d with delay = %f' % (l.j,lat))
 			env.process(route_blk(l.j,blk,lat,node_id))
 		create_blk(node_id)
-
-def get_trxns(itr_node): # checked
-	all_trxns = []
-	while itr_node!='none':
-		all_trxns.extend(itr_node.trxn_list)
-		itr_node = itr_node.parent_ptr
-	return all_trxns
 
 def create_blk(node_id): # checked
 		node_list[node_id].blk_cnt = node_list[node_id].blk_cnt+1
@@ -207,20 +242,26 @@ def create_blk(node_id): # checked
 		mining_trxnid = str(node_id)+'_'+str(node_list[node_id].trxn_cnt)
 		trxn_list.append(Trxn(mining_trxnid,-1,node_id,50))
 		# add other trxns
-		calc_bal = get_balance(node_list[node_id].mining_blk)
-		done_trxns = get_trxns(node_list[node_id].mining_blk)
-		useful_trxns = [ele for ele in node_list[node_id].trxn_pool if ele not in done_trxns]
-		for t in useful_trxns:
-			if(((calc_bal[t.payer]-t.coins)>=0) and len(trxn_list)<1000):
-				trxn_list.append(t)
-				calc_bal[t.payer] = calc_bal[t.payer]-t.coins
-				calc_bal[t.payee] = calc_bal[t.payee]+t.coins
+		valid = np.random.uniform()
+		if valid<invalid_ratio:
+			if len(node_list[node_id].trxn_pool)<1000:
+				trxn_list = node_list[node_id].trxn_pool
+			else:
+				trxn_list = node_list[node_id].trxn_pool[-999:]
 
-		level = node_list[node_id].mining_blk.level+1
-		
-		parent_ptr = node_list[node_id].mining_blk
-		
-		new_blk = Block(blk_id,parent_id,trxn_list,level,parent_ptr)
+		else:
+			calc_bal = get_balance(node_list[node_id].mining_blk)
+			done_trxns = get_trxns(node_list[node_id].mining_blk)
+			useful_trxns = [ele for ele in node_list[node_id].trxn_pool if ele not in done_trxns]
+			for t in useful_trxns:
+				if(((calc_bal[t.payer]-t.coins)>=0) and len(trxn_list)<1000):
+					trxn_list.append(t)
+					calc_bal[t.payer] = calc_bal[t.payer]-t.coins
+					calc_bal[t.payee] = calc_bal[t.payee]+t.coins
+
+			level = node_list[node_id].mining_blk.level+1
+			parent_ptr = node_list[node_id].mining_blk
+			new_blk = Block(blk_id,parent_id,trxn_list,level,parent_ptr)
 
 		print('Block %s is created at t = %f with num_trxns = %d' % (blk_id,env.now,len(trxn_list)))
 		print('parent_blk_id = %s' %parent_id)
@@ -240,7 +281,17 @@ for i in node_list:
 
 env.run(until=stop_time)
 
+# writing treefiles
+for node in node_list:
+	filename = 'treefile'+str(node.id)+'.txt'
+	file = open(filename,'w')
+	line=''
+	for info in node.timestamp_list:
+		line = line+str(info[0])+','+str(info[1])+','+str(info[2])+','+str(info[3])+'\n'
+	file.write(line)
+	file.close()
+
 # to do--------------------------------------------------------------------------------------------------------
 
 # changing B_Tx for every node
-# trxn:class or string
+# histogram of branch lengths
