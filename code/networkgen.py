@@ -1,9 +1,6 @@
 import numpy as np
 
 def networkgen(n,m,w):
-    # n = 10
-    # m = 3
-    # w = [1,0.3,0.2,0.3,1,0.6,0.2,0.4,0.3,1]
 
     adj = np.zeros((n,n))
     count = np.zeros((n)) 
@@ -34,6 +31,6 @@ def networkgen(n,m,w):
                     count[j-1] = count[j-1]+1
                     break
 
-    print(adj)
+    # print(adj)
     # print(count)
     return adj
